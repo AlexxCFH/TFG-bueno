@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ACC Telemetry Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #0c0c0c 0%, #1a1a1a 100%);
+            color: #ffffff;
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        .dashboard {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto auto;
+            gap: 20px;
+            padding: 20px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            grid-column: 1 / -1;
+            text-align: center;
+            padding: 20px;
+            background: linear-gradient(45deg, #ff6b35, #f7931e);
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(255, 107, 53, 0.3);
+        }
+
+        .header h1 {
+            font-size: 2.5rem;
+            font-weight: bold;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.5);
+        }
+
+        .status {
+            display: flex;
+            justify-content: center;
+            gap: 20px;
+            margin-top: 10px;
+        }
+
+        .status-indicator {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9rem;
+            transition: all 0.3s ease;
+        }
+
+        .status-connected {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            box-shadow: 0 0 20px rgba(76, 175, 80, 0.5);
+        }
+
+        .status-disconnected {
+            background: linear-gradient(45deg, #f44336, #d32f2f);
+            box-shadow: 0 0 20px rgba(244, 67, 54, 0.5);
+        }
+
+        .telemetry-card {
+            background: linear-gradient(145deg, #2a2a2a, #1e1e1e);
+            border-radius: 20px;
+            padding: 30px;
+            box-shadow: 0 15px 35px rgba(0,0,0,0.3);
+            border: 1px solid #333;
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+
+        .telemetry-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+        }
+
+        .rpm-section {
+            grid-column: 1 / -1;
+        }
+
+        .rpm-display {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .rpm-value {
+            font-size: 4rem;
+            font-weight: bold;
+            background: linear-gradient(45deg, #ff6b35, #f7931e);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 30px rgba(255, 107, 53, 0.5);
+        }
+
+        .rpm-label {
+            font-size: 1.2rem;
+            color: #cccccc;
+            margin-top: 5px;
+        }
+
+        .rpm-bar-container {
+            position: relative;
+            height: 40px;
+            background: #333;
+            border-radius: 20px;
+            overflow: hidden;
+            box-shadow: inset 0 2px 10px rgba(0,0,0,0.5);
+        }
+
+        .rpm-bar {
+            height: 100%;
+            border-radius: 20px;
+            transition: width 0.2s ease, background 0.3s ease;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .rpm-bar::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+            animation: shine 2s infinite;
+        }
+
+        @keyframes shine {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+
+        .rpm-bar.low {
+            background: linear-gradient(90deg, #4CAF50, #66BB6A);
+        }
+
+        .rpm-bar.medium {
+            background: linear-gradient(90deg, #FFC107, #FFD54F);
+        }
+
+        .rpm-bar.high {
+            background: linear-gradient(90deg, #FF9800, #FFB74D);
+        }
+
+        .rpm-bar.danger {
+            background: linear-gradient(90deg, #f44336, #ef5350);
+            animation: pulse 0.5s infinite alternate;
+        }
+
+        @keyframes pulse {
+            0% { opacity: 0.8; }
+            100% { opacity: 1; }
+        }
+
+        .rpm-ticks {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.8rem;
+            color: #888;
+        }
+
+        .data-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+
+        .data-item {
+            text-align: center;
+            padding: 15px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 15px;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .data-value {
+            font-size: 2rem;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .speed-value {
+            color: #2196F3;
+        }
+
+        .gear-value {
+            color: #9C27B0;
+        }
+
+        .data-label {
+            font-size: 0.9rem;
+            color: #cccccc;
+        }
+
+        .car-info {
+            grid-column: 1 / -1;
+            text-align: center;
+        }
+
+        .car-name {
+            font-size: 1.8rem;
+            font-weight: bold;
+            color: #ff6b35;
+            margin-bottom: 10px;
+            text-shadow: 0 0 10px rgba(255, 107, 53, 0.3);
+        }
+
+        .protocol-info {
+            font-size: 0.9rem;
+            color: #888;
+            background: rgba(255,255,255,0.05);
+            padding: 8px 16px;
+            border-radius: 15px;
+            display: inline-block;
+        }
+
+        .controls {
+            grid-column: 1 / -1;
+            display: flex;
+            justify-content: center;
+            gap: 15px;
+            margin-top: 10px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 25px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .btn-start {
+            background: linear-gradient(45deg, #4CAF50, #45a049);
+            color: white;
+        }
+
+        .btn-start:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(76, 175, 80, 0.3);
+        }
+
+        .btn-stop {
+            background: linear-gradient(45deg, #f44336, #d32f2f);
+            color: white;
+        }
+
+        .btn-stop:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(244, 67, 54, 0.3);
+        }
+
+        .timestamp {
+            text-align: center;
+            color: #666;
+            font-size: 0.8rem;
+            margin-top: 15px;
+        }
+
+        .connection-pulse {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+            animation: pulse-dot 2s infinite;
+        }
+
+        .pulse-connected {
+            background: #4CAF50;
+            box-shadow: 0 0 10px #4CAF50;
+        }
+
+        .pulse-disconnected {
+            background: #f44336;
+            box-shadow: 0 0 10px #f44336;
+        }
+
+        @keyframes pulse-dot {
+            0% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.5; transform: scale(0.8); }
+            100% { opacity: 1; transform: scale(1); }
+        }
+
+        @media (max-width: 768px) {
+            .dashboard {
+                grid-template-columns: 1fr;
+                padding: 10px;
+                gap: 15px;
+            }
+            
+            .header h1 {
+                font-size: 2rem;
+            }
+            
+            .rpm-value {
+                font-size: 3rem;
+            }
+            
+            .data-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .controls {
+                flex-direction: column;
+                align-items: center;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="dashboard">
+        <div class="header">
+            <h1>🏎️ ACC Telemetry Dashboard</h1>
+            <div class="status">
+                <div class="status-indicator" id="connectionStatus">
+                    <span class="connection-pulse pulse-disconnected"></span>
+                    Desconectado
+                </div>
+                <div class="status-indicator" id="protocolStatus">
+                    Protocolo: Ninguno
+                </div>
+            </div>
+        </div>
+
+        <div class="telemetry-card rpm-section">
+            <div class="rpm-display">
+                <div class="rpm-value" id="rpmValue">0</div>
+                <div class="rpm-label">RPM</div>
+            </div>
+            <div class="rpm-bar-container">
+                <div class="rpm-bar low" id="rpmBar"></div>
+            </div>
+            <div class="rpm-ticks">
+                <span>0</span>
+                <span>2000</span>
+                <span>4000</span>
+                <span>6000</span>
+                <span>8000</span>
+                <span>10000</span>
+            </div>
+        </div>
+
+        <div class="telemetry-card">
+            <div class="data-grid">
+                <div class="data-item">
+                    <div class="data-value speed-value" id="speedValue">0</div>
+                    <div class="data-label">km/h</div>
+                </div>
+                <div class="data-item">
+                    <div class="data-value gear-value" id="gearValue">N</div>
+                    <div class="data-label">Marcha</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="telemetry-card car-info">
+            <div class="car-name" id="carName">Desconocido</div>
+            <div class="protocol-info" id="protocolInfo">
+                Esperando conexión...
+            </div>
+            <div class="timestamp" id="lastUpdate">
+                Última actualización: --:--:--
+            </div>
+        </div>
+
+        <div class="controls">
+            <button class="btn btn-start" onclick="startMonitor()">▶ Iniciar Monitor</button>
+            <button class="btn btn-stop" onclick="stopMonitor()">⏹ Detener Monitor</button>
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let isConnected = false;
+
+        // Conectar a Socket.IO
+        function connectSocket() {
+            socket = io('http://localhost:5000');
+            
+            socket.on('connect', () => {
+                console.log('Conectado al servidor Socket.IO');
+            });
+
+            socket.on('telemetry_update', (data) => {
+                updateTelemetry(data);
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Desconectado del servidor Socket.IO');
+                updateConnectionStatus(false);
+            });
+        }
+
+        // Actualizar datos de telemetría
+        function updateTelemetry(data) {
+            updateConnectionStatus(data.isConnected || false);
+            
+            // RPM
+            const rpm = data.rpm || 0;
+            document.getElementById('rpmValue').textContent = rpm.toLocaleString();
+            updateRPMBar(rpm);
+            
+            // Velocidad
+            document.getElementById('speedValue').textContent = data.speed || 0;
+            
+            // Marcha
+            document.getElementById('gearValue').textContent = data.gear || 'N';
+            
+            // Coche
+            document.getElementById('carName').textContent = data.car || 'Desconocido';
+            
+            // Protocolo
+            const protocol = data.protocol || 'none';
+            const protocolText = protocol === 'official' ? '🟢 Oficial (acc-broadcast)' : 
+                                protocol === 'manual' ? '🟡 Manual (UDP)' : '🔴 Sin protocolo';
+            document.getElementById('protocolInfo').textContent = protocolText;
+            document.getElementById('protocolStatus').textContent = `Protocolo: ${protocol}`;
+            
+            // Timestamp
+            if (data.timestamp) {
+                const time = new Date(data.timestamp).toLocaleTimeString();
+                document.getElementById('lastUpdate').textContent = `Última actualización: ${time}`;
+            }
+        }
+
+        // Actualizar barra de RPM
+        function updateRPMBar(rpm) {
+            const maxRPM = 10000;
+            const percentage = Math.min((rpm / maxRPM) * 100, 100);
+            const rpmBar = document.getElementById('rpmBar');
+            
+            rpmBar.style.width = percentage + '%';
+            
+            // Cambiar color según RPM
+            rpmBar.className = 'rpm-bar';
+            if (rpm < 2000) {
+                rpmBar.classList.add('low');
+            } else if (rpm < 5000) {
+                rpmBar.classList.add('medium');
+            } else if (rpm < 7500) {
+                rpmBar.classList.add('high');
+            } else {
+                rpmBar.classList.add('danger');
+            }
+        }
+
+        // Actualizar estado de conexión
+        function updateConnectionStatus(connected) {
+            isConnected = connected;
+            const statusElement = document.getElementById('connectionStatus');
+            const pulseElement = statusElement.querySelector('.connection-pulse');
+            
+            if (connected) {
+                statusElement.className = 'status-indicator status-connected';
+                statusElement.innerHTML = '<span class="connection-pulse pulse-connected"></span>Conectado a ACC';
+            } else {
+                statusElement.className = 'status-indicator status-disconnected';
+                statusElement.innerHTML = '<span class="connection-pulse pulse-disconnected"></span>Desconectado';
+            }
+        }
+
+        // Funciones de control
+        async function startMonitor() {
+            try {
+                const response = await fetch('/api/start', { method: 'POST' });
+                const data = await response.json();
+                console.log('Monitor iniciado:', data.message);
+                
+                // Comenzar a solicitar datos
+                startPolling();
+            } catch (error) {
+                console.error('Error iniciando monitor:', error);
+            }
+        }
+
+        async function stopMonitor() {
+            try {
+                const response = await fetch('/api/stop', { method: 'POST' });
+                const data = await response.json();
+                console.log('Monitor detenido:', data.message);
+                
+                stopPolling();
+                updateConnectionStatus(false);
+            } catch (error) {
+                console.error('Error deteniendo monitor:', error);
+            }
+        }
+
+        // Polling para obtener datos cuando no hay Socket.IO
+        let pollingInterval;
+
+        function startPolling() {
+            if (pollingInterval) clearInterval(pollingInterval);
+            
+            pollingInterval = setInterval(async () => {
+                try {
+                    const response = await fetch('/api/telemetry');
+                    const data = await response.json();
+                    updateTelemetry(data);
+                } catch (error) {
+                    console.error('Error obteniendo telemetría:', error);
+                }
+            }, 100); // Actualizar cada 100ms
+        }
+
+        function stopPolling() {
+            if (pollingInterval) {
+                clearInterval(pollingInterval);
+                pollingInterval = null;
+            }
+        }
+
+        // Inicialización
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Dashboard ACC cargado');
+            connectSocket();
+            startPolling(); // Iniciar polling como respaldo
+        });
+
+        // Manejar cierre de página
+        window.addEventListener('beforeunload', () => {
+            stopPolling();
+        });
+    </script>
+</body>
+</html>
