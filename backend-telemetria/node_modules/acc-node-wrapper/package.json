@@ -1,0 +1,30 @@
+{
+  "name": "acc-node-wrapper",
+  "version": "1.0.6",
+  "description": "ACC SDK and ACC Shared Memory implementation for Node.js.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FynniX/acc-node-wrapper.git"
+  },
+  "keywords": [
+    "nodejs",
+    "assetto-corsa-competizione",
+    "assetto-corsa-competizione-server"
+  ],
+  "author": "Fynn Haupt",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/FynniX/acc-node-wrapper/issues"
+  },
+  "homepage": "https://github.com/FynniX/acc-node-wrapper#readme",
+  "dependencies": {
+    "@fynnix/node-easy-ipc": "^1.0.8",
+    "binutils": "^0.1.0",
+    "moment": "^2.29.1",
+    "utf8-bytes": "^0.0.1"
+  }
+}

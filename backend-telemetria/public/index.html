@@ -3,14 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>ACC Official Telemetry Dashboard</title>
+    <title>ACC Enhanced Telemetry Dashboard</title>
     <link rel="stylesheet" href="style.css">
     <script src="/socket.io/socket.io.js"></script>
 </head>
 <body>
     <div class="dashboard">
         <div class="header">
-            <h1>🏎️ ACC PROTOCOLO OFICIAL</h1>
+            <h1>🏎️ ACC DASHBOARD AVANZADO</h1>
             <div id="connectionStatus" class="status-indicator status-disconnected">
                 🔌 Desconectado
             </div>
@@ -20,7 +20,7 @@
             </div>
         </div>
 
-        <!-- Información del Coche y Piloto (OFICIAL) -->
+        <!-- Información del Coche y Piloto -->
         <div class="car-info-card card">
             <div class="card-title">🏎️ Información del Coche</div>
             <div class="car-details">
@@ -39,28 +39,180 @@
             </div>
         </div>
 
-        <!-- Velocidad (OFICIAL - Campo Kmh) -->
+        <!-- NUEVO: Motor y RPM Detallado -->
+        <div class="card">
+            <div class="card-title">🔥 Motor</div>
+            <div class="rpm-gauge">
+                <div class="gauge-bg">
+                    <div class="gauge-inner">
+                        <div id="rpmNeedle" class="gauge-needle"></div>
+                        <div id="rpmValue" class="metric-value">0</div>
+                        <div id="rpmMax" class="rpm-max">/ 0</div>
+                    </div>
+                </div>
+            </div>
+            <div class="engine-grid">
+                <div class="engine-item">
+                    <div class="engine-label">Temperatura</div>
+                    <div id="engineTemp" class="engine-value temp-value">0°C</div>
+                </div>
+                <div class="engine-item">
+                    <div class="engine-label">Turbo</div>
+                    <div id="turboBoost" class="engine-value turbo-value">0.0</div>
+                </div>
+                <div class="engine-item">
+                    <div class="engine-label">Combustible</div>
+                    <div id="fuelValue" class="engine-value fuel-value">0L</div>
+                </div>
+                <div class="engine-item">
+                    <div class="engine-label">Potencia Max</div>
+                    <div id="maxPower" class="engine-value">0cv</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Velocidad y Marcha (Mejorado) -->
         <div class="card">
             <div class="card-title">⚡ Velocidad</div>
             <div id="speedValue" class="metric-value">0<span class="metric-unit">km/h</span></div>
             <div class="speed-bar">
                 <div id="speedFill" class="speed-fill" style="width: 0%"></div>
             </div>
-            <div class="speed-info">
-                <small>Datos del protocolo oficial ACC</small>
-            </div>
-        </div>
-
-        <!-- Marcha (OFICIAL - Campo Gear) -->
-        <div class="card">
-            <div class="card-title">⚙️ Marcha</div>
             <div id="gearValue" class="gear-display">N</div>
-            <div class="gear-info">
-                <small>R = Reversa, N = Neutral, 1-8 = Marchas</small>
+            <div class="speed-3d">
+                <div>Velocidad 3D: <span id="speed3dValue" class="speed-3d-value">0 km/h</span></div>
             </div>
         </div>
 
-        <!-- Información de Carrera (OFICIAL) -->
+        <!-- NUEVO: Controles del Vehículo -->
+        <div class="card">
+            <div class="card-title">🎮 Controles</div>
+            <div class="controls-grid">
+                <div class="control-item">
+                    <span class="control-label">Acelerador</span>
+                    <div class="control-bar">
+                        <div id="throttleFill" class="control-fill throttle-fill" style="width: 0%"></div>
+                    </div>
+                    <span id="throttleValue" class="control-value">0%</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-label">Freno</span>
+                    <div class="control-bar">
+                        <div id="brakeFill" class="control-fill brake-fill" style="width: 0%"></div>
+                    </div>
+                    <span id="brakeValue" class="control-value">0%</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-label">Embrague</span>
+                    <div class="control-bar">
+                        <div id="clutchFill" class="control-fill clutch-fill" style="width: 0%"></div>
+                    </div>
+                    <span id="clutchValue" class="control-value">0%</span>
+                </div>
+                <div class="control-item">
+                    <span class="control-label">Volante</span>
+                    <div class="control-bar">
+                        <div id="steerFill" class="control-fill steer-fill" style="width: 50%; margin-left: 25%"></div>
+                    </div>
+                    <span id="steerValue" class="control-value">0°</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- NUEVO: Fuerzas G -->
+        <div class="card">
+            <div class="card-title">📐 Fuerzas G</div>
+            <div class="g-force-display">
+                <div class="g-force-item">
+                    <div class="g-force-label">Longitudinal</div>
+                    <div id="gForceLong" class="g-force-value">0.00G</div>
+                </div>
+                <div class="g-force-item">
+                    <div class="g-force-label">Lateral</div>
+                    <div id="gForceLat" class="g-force-value">0.00G</div>
+                </div>
+                <div class="g-force-item">
+                    <div class="g-force-label">Vertical</div>
+                    <div id="gForceVert" class="g-force-value">0.00G</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NUEVO: Neumáticos Detallados -->
+        <div class="tyre-card card">
+            <div class="card-title">🛞 Neumáticos</div>
+            <div class="tyre-layout">
+                <div class="tyre-compound">
+                    <span>Compuesto: </span>
+                    <span id="tyreCompound" class="compound-value">-</span>
+                </div>
+                <div class="tyre-row">
+                    <div class="tyre-item" id="tyreFrontLeft">
+                        <div class="tyre-label">DI</div>
+                        <div class="tyre-data">
+                            <div id="tyreTempFL" class="tyre-temp">0°C</div>
+                            <div id="tyrePressFL" class="tyre-pressure">0.0 psi</div>
+                            <div id="tyreWearFL" class="tyre-wear">0%</div>
+                        </div>
+                    </div>
+                    <div class="tyre-item" id="tyreFrontRight">
+                        <div class="tyre-label">DD</div>
+                        <div class="tyre-data">
+                            <div id="tyreTempFR" class="tyre-temp">0°C</div>
+                            <div id="tyrePressRF" class="tyre-pressure">0.0 psi</div>
+                            <div id="tyreWearFR" class="tyre-wear">0%</div>
+                        </div>
+                    </div>
+                </div>
+                <div class="tyre-row">
+                    <div class="tyre-item" id="tyreRearLeft">
+                        <div class="tyre-label">TI</div>
+                        <div class="tyre-data">
+                            <div id="tyreTempRL" class="tyre-temp">0°C</div>
+                            <div id="tyrePressRL" class="tyre-pressure">0.0 psi</div>
+                            <div id="tyreWearRL" class="tyre-wear">0%</div>
+                        </div>
+                    </div>
+                    <div class="tyre-item" id="tyreRearRight">
+                        <div class="tyre-label">TD</div>
+                        <div class="tyre-data">
+                            <div id="tyreTempRR" class="tyre-temp">0°C</div>
+                            <div id="tyrePressRR" class="tyre-pressure">0.0 psi</div>
+                            <div id="tyreWearRR" class="tyre-wear">0%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NUEVO: Frenos -->
+        <div class="card">
+            <div class="card-title">🟥 Sistema de Frenos</div>
+            <div class="brake-grid">
+                <div class="brake-item">
+                    <div class="brake-label">Delantero Izq</div>
+                    <div id="brakeTempFL" class="brake-temp">0°C</div>
+                </div>
+                <div class="brake-item">
+                    <div class="brake-label">Delantero Der</div>
+                    <div id="brakeTempFR" class="brake-temp">0°C</div>
+                </div>
+                <div class="brake-item">
+                    <div class="brake-label">Trasero Izq</div>
+                    <div id="brakeTempRL" class="brake-temp">0°C</div>
+                </div>
+                <div class="brake-item">
+                    <div class="brake-label">Trasero Der</div>
+                    <div id="brakeTempRR" class="brake-temp">0°C</div>
+                </div>
+                <div class="brake-item brake-bias">
+                    <div class="brake-label">Balance</div>
+                    <div id="brakeBias" class="brake-value">50.0%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Información de Carrera (Original) -->
         <div class="card">
             <div class="card-title">🏁 Estado de Carrera</div>
             <div class="race-grid">
@@ -83,7 +235,7 @@
             </div>
         </div>
 
-        <!-- Tiempos de Vuelta (OFICIAL - Estructura LapInfo) -->
+        <!-- Tiempos de Vuelta (Original) -->
         <div class="card">
             <div class="card-title">⏱️ Tiempos de Vuelta</div>
             <div class="lap-times">
@@ -116,7 +268,81 @@
             </div>
         </div>
 
-        <!-- Datos de Sesión (OFICIAL) -->
+        <!-- NUEVO: Suspensión -->
+        <div class="card">
+            <div class="card-title">🔧 Suspensión</div>
+            <div class="suspension-grid">
+                <div class="suspension-item">
+                    <div class="suspension-label">Altura de Marcha</div>
+                    <div class="suspension-values">
+                        <div>Delante: <span id="rideHeightFront" class="susp-value">0mm</span></div>
+                        <div>Atrás: <span id="rideHeightRear" class="susp-value">0mm</span></div>
+                    </div>
+                </div>
+                <div class="suspension-item">
+                    <div class="suspension-label">Recorrido Suspensión</div>
+                    <div class="suspension-values">
+                        <div>DI: <span id="suspTravelFL" class="susp-value">0mm</span></div>
+                        <div>DD: <span id="suspTravelFR" class="susp-value">0mm</span></div>
+                        <div>TI: <span id="suspTravelRL" class="susp-value">0mm</span></div>
+                        <div>TD: <span id="suspTravelRR" class="susp-value">0mm</span></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NUEVO: Asistencias -->
+        <div class="card">
+            <div class="card-title">🛡️ Asistencias</div>
+            <div class="aids-grid">
+                <div class="aid-item">
+                    <div class="aid-label">ABS</div>
+                    <div id="absLevel" class="aid-value">OFF</div>
+                    <div id="absActive" class="aid-status">●</div>
+                </div>
+                <div class="aid-item">
+                    <div class="aid-label">TC</div>
+                    <div id="tcLevel" class="aid-value">OFF</div>
+                    <div id="tcActive" class="aid-status">●</div>
+                </div>
+                <div class="aid-item">
+                    <div class="aid-label">Cambio Auto</div>
+                    <div id="autoShifter" class="aid-value">OFF</div>
+                </div>
+                <div class="aid-item">
+                    <div class="aid-label">Limitador</div>
+                    <div id="pitLimiter" class="aid-value">OFF</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NUEVO: Sistemas Energéticos -->
+        <div class="card energy-card" style="display: none;" id="energyCard">
+            <div class="card-title">🔋 Sistemas Energéticos</div>
+            <div class="energy-grid">
+                <div class="energy-item" id="ersItem" style="display: none;">
+                    <div class="energy-label">ERS</div>
+                    <div class="energy-data">
+                        <div>Estado: <span id="ersStatus" class="energy-value">-</span></div>
+                        <div>Recuperación: <span id="ersRecovery" class="energy-value">-</span></div>
+                        <div>Potencia: <span id="ersPower" class="energy-value">-</span></div>
+                    </div>
+                </div>
+                <div class="energy-item" id="kersItem" style="display: none;">
+                    <div class="energy-label">KERS</div>
+                    <div class="energy-data">
+                        <div>Energía: <span id="kersCharge" class="energy-value">0/0 kJ</span></div>
+                        <div>Input: <span id="kersInput" class="energy-value">0%</span></div>
+                    </div>
+                </div>
+                <div class="energy-item" id="drsItem" style="display: none;">
+                    <div class="energy-label">DRS</div>
+                    <div id="drsStatus" class="energy-value drs-status">No disponible</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Datos de Sesión (Original) -->
         <div class="card">
             <div class="card-title">🏆 Información de Sesión</div>
             <div class="session-grid">
@@ -147,7 +373,7 @@
             </div>
         </div>
 
-        <!-- Datos del Circuito (OFICIAL) -->
+        <!-- Datos del Circuito (Original) -->
         <div class="card">
             <div class="card-title">🏁 Información del Circuito</div>
             <div class="track-info">
@@ -168,7 +394,7 @@
                 <div id="lastUpdate" class="last-update">Última actualización: --:--:--</div>
                 <div class="library-status">
                     <span>Sistema:</span>
-                    <span class="library-badge">Protocolo Oficial ACC</span>
+                    <span class="library-badge" id="systemBadge">Protocolo Híbrido ACC</span>
                 </div>
             </div>
         </div>
