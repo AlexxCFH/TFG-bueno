@@ -520,7 +520,7 @@ class ACCBroadcastingMonitor {
     }
 }
 
-// CLASE SHARED MEMORY MODIFICADA PARA GESTOR HÍBRIDO
+// CLASE SHARED MEMORY MODIFICADA PARA GESTOR HÍBRIDO CON CORRECCIÓN DE NEUMÁTICOS
 class ACCSharedMemoryMonitorHybrid {
     constructor(hybridManager) {
         this.hybridManager = hybridManager;
@@ -528,6 +528,8 @@ class ACCSharedMemoryMonitorHybrid {
         this.isRunning = false;
         this.isConnected = false;
         this.updateCount = 0;
+        this.debugCount = 0;
+        this.lastDebugTime = 0;
 
         // Registrarse en el gestor híbrido
         this.hybridManager.registerProtocol('sharedMemory', this);
@@ -535,13 +537,35 @@ class ACCSharedMemoryMonitorHybrid {
         this.sharedMemoryData = {
             physics: {
                 gas: 0, brake: 0, fuel: 0, gear: 0, rpm: 0, speedKmh: 0,
-                accG: [0, 0, 0], tyreCoreTemperature: [0, 0, 0, 0],
-                brakeTemp: [0, 0, 0, 0], wheelsPressure: [0, 0, 0, 0],
+                accG: [0, 0, 0], 
+                
+                // NEUMÁTICOS - Campos múltiples
+                TyreCoreTemp: [0, 0, 0, 0],
+                wheelPressure: [0, 0, 0, 0],
+                wheelSlip: [0, 0, 0, 0],
+                slipRatio: [0, 0, 0, 0],
+                tyreCoreTemperature: [0, 0, 0, 0],
+                tyreWear: [0, 0, 0, 0],
+                tyreDirtLevel: [0, 0, 0, 0],
+                wheelsPressure: [0, 0, 0, 0],
+                
+                // FRENOS
+                brakeTemp: [0, 0, 0, 0],
+                brakeBias: 0.5,
+                
+                // SUSPENSIÓN
+                rideHeight: [0, 0],
+                suspensionTravel: [0, 0, 0, 0],
+                
+                // MOTOR
                 engineTemp: 0, airTemp: 0, roadTemp: 0, steerAngle: 0,
-                clutch: 0, turboBoost: 0, rideHeight: [0, 0],
-                suspensionTravel: [0, 0, 0, 0], brakeBias: 0.5,
+                clutch: 0, turboBoost: 0,
+                
+                // ASISTENCIAS
                 abs: 0, tc: 0, autoShifterOn: 0, pitLimiterOn: 0,
                 absInAction: 0, tcinAction: 0,
+                
+                // ENERGÍA
                 ersIsCharging: 0, ersRecoveryLevel: 0, ersPowerLevel: 0,
                 kersCurrentKJ: 0, kersMaxKJ: 0, kersInput: 0, drs: 0
             },
@@ -549,7 +573,10 @@ class ACCSharedMemoryMonitorHybrid {
                 status: 0, session: 0, position: 0, completedLaps: 0,
                 currentTime: '', lastTime: '', bestTime: '',
                 deltaLapTime: 0, isInPit: 0, flag: 0, penalty: 0,
-                tyreCompound: '', rainIntensity: 0, trackGripStatus: 1.0
+                tyreCompound: '', rainIntensity: 0, trackGripStatus: 1.0,
+                rainTyres: false, currentTyreSet: 0, mfdTyreSet: 0,
+                mfdTyrePressureLF: 0, mfdTyrePressureRF: 0, 
+                mfdTyrePressureLR: 0, mfdTyrePressureRR: 0
             },
             static: {
                 playerName: '', playerSurname: '', carModel: '',
@@ -565,23 +592,25 @@ class ACCSharedMemoryMonitorHybrid {
             return true;
         }
 
-        console.log('🧠 INICIANDO MONITOR SHARED MEMORY (Gestor Híbrido)');
+        console.log('🧠 INICIANDO MONITOR SHARED MEMORY (Gestor Híbrido) - VERSIÓN CORREGIDA');
 
         try {
             const ACCNodeWrapper = require('acc-node-wrapper');
             this.wrapper = new ACCNodeWrapper();
             this.setupSharedMemoryEvents();
-            this.wrapper.initSharedMemory(50, 100, 1000, false);
+
+            // CONFIGURACIÓN OPTIMIZADA para capturar datos de neumáticos
+            this.wrapper.initSharedMemory(20, 100, 1000, false);
 
             this.isRunning = true;
             this.isConnected = true;
             this.hybridManager.updateConnectionStatus('sharedMemory', true);
 
-            console.log('✅ Shared Memory iniciado');
+            console.log('✅ Shared Memory iniciado con frecuencia optimizada para neumáticos');
             return true;
 
         } catch (error) {
-            console.error('❌ Error iniciando Shared Memory:', error.message);
+            console.error('❌ Error iniciando memoria compartida:', error.message);
             this.isRunning = false;
             this.isConnected = false;
             this.hybridManager.updateConnectionStatus('sharedMemory', false);
@@ -592,23 +621,143 @@ class ACCSharedMemoryMonitorHybrid {
     setupSharedMemoryEvents() {
         if (!this.wrapper) return;
 
-        this.wrapper.on('M_PHYSICS_RESULT', (data) => {
-            this.handlePhysicsEvent(data);
-            this.sendDataToHybridManager();
-        });
+        this.wrapper.on('M_PHYSICS_RESULT', (data) => this.handlePhysicsEventAdvanced(data));
+        this.wrapper.on('M_GRAPHICS_RESULT', (data) => this.handleGraphicsEventAdvanced(data));
+        this.wrapper.on('M_STATIC_RESULT', (data) => this.handleStaticEvent(data));
 
-        this.wrapper.on('M_GRAPHICS_RESULT', (data) => {
-            this.handleGraphicsEvent(data);
-            this.sendDataToHybridManager();
-        });
-
-        this.wrapper.on('M_STATIC_RESULT', (data) => {
-            this.handleStaticEvent(data);
-            this.sendDataToHybridManager();
-        });
+        console.log('📡 Eventos de memoria compartida configurados para neumáticos');
     }
 
-    // MÉTODO CLAVE: Enviar datos al gestor híbrido
+    // === FUNCIÓN CORREGIDA: handlePhysicsEventAdvanced ===
+    handlePhysicsEventAdvanced(data) {
+        this.debugCount++;
+        const now = Date.now();
+        
+        // DEBUG específico para neumáticos cada 15 segundos
+        if (now - this.lastDebugTime > 15000) {
+            this.lastDebugTime = now;
+            console.log(`\n🔍 === DEBUG PHYSICS ACC #${this.debugCount} ===`);
+            console.log(`⚡ Velocidad: ${Math.round(data.speedKmh || 0)}km/h | RPM: ${Math.round(data.rpms || 0)}`);
+            
+            // Verificar campos específicos de tu test
+            console.log('🎯 Verificando campos del test en physics:');
+            console.log('- TyreCoreTemp:', data.TyreCoreTemp ? `[${data.TyreCoreTemp.slice(0,4).join(', ')}]` : '❌ No encontrado');
+            console.log('- wheelPressure:', data.wheelPressure ? `[${data.wheelPressure.slice(0,4).join(', ')}]` : '❌ No encontrado');
+            console.log('- wheelSlip:', data.wheelSlip ? `[${data.wheelSlip.slice(0,4).join(', ')}]` : '❌ No encontrado');
+            console.log('- slipRatio:', data.slipRatio ? `[${data.slipRatio.slice(0,4).join(', ')}]` : '❌ No encontrado');
+        }
+        
+        // Mapear todos los datos manteniendo los nombres exactos
+        this.sharedMemoryData.physics = {
+            // Datos básicos
+            gas: this.validateNumber(data.gas, 0),
+            brake: this.validateNumber(data.brake, 0),
+            fuel: this.validateNumber(data.fuel, 0),
+            gear: this.formatGear(data.gear),
+            rpm: Math.round(this.validateNumber(data.rpms, 0)),
+            speedKmh: Math.round(this.validateNumber(data.speedKmh, 0)),
+            
+            // Fuerzas G
+            accG: this.validateArray(data.accG, [0, 0, 0]),
+            
+            // === NEUMÁTICOS (MANTENIENDO NOMBRES EXACTOS DEL TEST) ===
+            TyreCoreTemp: data.TyreCoreTemp || [0, 0, 0, 0],
+            wheelPressure: data.wheelPressure || [0, 0, 0, 0],
+            wheelSlip: data.wheelSlip || [0, 0, 0, 0],
+            slipRatio: data.slipRatio || [0, 0, 0, 0],
+            
+            // También mantener nombres alternativos
+            tyreCoreTemperature: data.TyreCoreTemp || data.tyreCoreTemperature || [0, 0, 0, 0],
+            wheelsPressure: data.wheelPressure || data.wheelsPressure || [0, 0, 0, 0],
+            tyreWear: data.wheelSlip || data.tyreWear || [0, 0, 0, 0],
+            tyreDirtLevel: data.slipRatio || data.tyreDirtLevel || [0, 0, 0, 0],
+            
+            // === FRENOS ===
+            brakeTemp: data.brakeTemp || [0, 0, 0, 0],
+            brakeBias: this.validateNumber(data.brakeBias, 0.5) - 0.05,
+            
+            // === SUSPENSIÓN ===
+            rideHeight: data.rideHeight || [0, 0],
+            suspensionTravel: data.suspensionTravel || [0, 0, 0, 0],
+            
+            // Motor y otros (igual que antes)
+            engineTemp: this.validateNumber(data.engineTemp, 0),
+            airTemp: this.validateNumber(data.airTemp, 0),
+            roadTemp: this.validateNumber(data.roadTemp, 0),
+            steerAngle: this.validateNumber(data.steerAngle, 0),
+            clutch: this.validateNumber(data.clutch, 0),
+            turboBoost: this.validateNumber(data.turboBoost, 0),
+            
+            // Asistencias
+            abs: this.validateNumber(data.abs, 0),
+            tc: this.validateNumber(data.tc, 0),
+            autoShifterOn: this.validateNumber(data.autoShifterOn, 0),
+            pitLimiterOn: this.validateNumber(data.pitLimiterOn, 0),
+            absInAction: this.validateNumber(data.absInAction, 0),
+            tcinAction: this.validateNumber(data.tcinAction, 0),
+            
+            // Sistemas energéticos
+            ersIsCharging: this.validateNumber(data.ersIsCharging, 0),
+            ersRecoveryLevel: this.validateNumber(data.ersRecoveryLevel, 0),
+            ersPowerLevel: this.validateNumber(data.ersPowerLevel, 0),
+            kersCurrentKJ: this.validateNumber(data.kersCurrentKJ, 0),
+            kersMaxKJ: this.validateNumber(data.kersMaxKJ, 0),
+            kersInput: this.validateNumber(data.kersInput, 0),
+            drs: this.validateNumber(data.drs, 0)
+        };
+        
+        this.updateCount++;
+        this.sendDataToHybridManager();
+    }
+
+    handleGraphicsEventAdvanced(data) {
+        // Capturar datos gráficos con foco en compuesto de neumáticos
+        this.sharedMemoryData.graphics = {
+            status: data.status || 0,
+            session: data.session || 0,
+            position: data.position || 0,
+            completedLaps: data.completedLaps || 0,
+            currentTime: this.safeString(data.currentTime),
+            lastTime: this.safeString(data.lastTime),
+            bestTime: this.safeString(data.bestTime),
+            deltaLapTime: data.deltaLapTime || 0,
+            isInPit: data.isInPit || 0,
+            flag: data.flag || 0,
+            penalty: data.penalty || 0,
+            tyreCompound: this.safeString(data.tyreCompound),
+            rainIntensity: data.rainIntensity || 0,
+            trackGripStatus: data.trackGripStatus || 1.0,
+            rainTyres: data.rainTyres || false,
+            currentTyreSet: data.currentTyreSet || 0,
+            mfdTyreSet: data.mfdTyreSet || 0,
+            mfdTyrePressureLF: data.mfdTyrePressureLF || 0,
+            mfdTyrePressureRF: data.mfdTyrePressureRF || 0,
+            mfdTyrePressureLR: data.mfdTyrePressureLR || 0,
+            mfdTyrePressureRR: data.mfdTyrePressureRR || 0
+        };
+
+        this.sendDataToHybridManager();
+    }
+
+    handleStaticEvent(data) {
+        this.sharedMemoryData.static = {
+            playerName: this.safeString(data.playerName),
+            playerSurname: this.safeString(data.playerSurname),
+            carModel: this.safeString(data.carModel),
+            track: this.safeString(data.track),
+            maxRpm: data.maxRpm || 0,
+            maxFuel: data.maxFuel || 0,
+            maxPower: data.maxPower || 0,
+            maxTurboBoost: data.maxTurboBoost || 1.0,
+            hasERS: data.hasERS || 0,
+            hasKERS: data.hasKERS || 0,
+            hasDRS: data.hasDRS || 0
+        };
+
+        this.sendDataToHybridManager();
+    }
+
+    // === FUNCIÓN CORREGIDA: sendDataToHybridManager ===
     sendDataToHybridManager() {
         const data = {
             carInfo: {
@@ -647,9 +796,90 @@ class ACCSharedMemoryMonitorHybrid {
                 trackName: this.sharedMemoryData.static.track || 'Cargando...',
                 trackMeters: 7004
             },
+            // === DATOS EXTENDIDOS CON CAMPOS REALES ===
             extendedData: {
-                physics: this.sharedMemoryData.physics,
-                graphics: this.sharedMemoryData.graphics,
+                physics: {
+                    // Datos básicos
+                    gas: this.sharedMemoryData.physics.gas,
+                    brake: this.sharedMemoryData.physics.brake,
+                    fuel: this.sharedMemoryData.physics.fuel,
+                    gear: this.sharedMemoryData.physics.gear,
+                    rpm: this.sharedMemoryData.physics.rpm,
+                    speedKmh: this.sharedMemoryData.physics.speedKmh,
+                    accG: this.sharedMemoryData.physics.accG,
+                    
+                    // === NEUMÁTICOS - CAMPOS REALES DEL TEST ===
+                    TyreCoreTemp: this.sharedMemoryData.physics.TyreCoreTemp || this.sharedMemoryData.physics.tyreCoreTemperature || [0, 0, 0, 0],
+                    wheelPressure: this.sharedMemoryData.physics.wheelPressure || this.sharedMemoryData.physics.wheelsPressure || [0, 0, 0, 0],
+                    wheelSlip: this.sharedMemoryData.physics.wheelSlip || this.sharedMemoryData.physics.tyreWear || [0, 0, 0, 0],
+                    slipRatio: this.sharedMemoryData.physics.slipRatio || this.sharedMemoryData.physics.tyreDirtLevel || [0, 0, 0, 0],
+                    
+                    // También mantener nombres antiguos por compatibilidad
+                    tyreCoreTemperature: this.sharedMemoryData.physics.TyreCoreTemp || this.sharedMemoryData.physics.tyreCoreTemperature || [0, 0, 0, 0],
+                    wheelsPressure: this.sharedMemoryData.physics.wheelPressure || this.sharedMemoryData.physics.wheelsPressure || [0, 0, 0, 0],
+                    tyreWear: this.sharedMemoryData.physics.wheelSlip || this.sharedMemoryData.physics.tyreWear || [0, 0, 0, 0],
+                    tyreDirtLevel: this.sharedMemoryData.physics.slipRatio || this.sharedMemoryData.physics.tyreDirtLevel || [0, 0, 0, 0],
+                    
+                    // Frenos
+                    brakeTemp: this.sharedMemoryData.physics.brakeTemp,
+                    brakeBias: this.sharedMemoryData.physics.brakeBias,
+                    
+                    // Motor
+                    engineTemp: this.sharedMemoryData.physics.engineTemp,
+                    airTemp: this.sharedMemoryData.physics.airTemp,
+                    roadTemp: this.sharedMemoryData.physics.roadTemp,
+                    steerAngle: this.sharedMemoryData.physics.steerAngle,
+                    clutch: this.sharedMemoryData.physics.clutch,
+                    turboBoost: this.sharedMemoryData.physics.turboBoost,
+                    
+                    // Suspensión
+                    rideHeight: this.sharedMemoryData.physics.rideHeight,
+                    suspensionTravel: this.sharedMemoryData.physics.suspensionTravel,
+                    
+                    // Asistencias
+                    abs: this.sharedMemoryData.physics.abs,
+                    tc: this.sharedMemoryData.physics.tc,
+                    autoShifterOn: this.sharedMemoryData.physics.autoShifterOn,
+                    pitLimiterOn: this.sharedMemoryData.physics.pitLimiterOn,
+                    absInAction: this.sharedMemoryData.physics.absInAction,
+                    tcinAction: this.sharedMemoryData.physics.tcinAction,
+                    
+                    // Sistemas energéticos
+                    ersIsCharging: this.sharedMemoryData.physics.ersIsCharging,
+                    ersRecoveryLevel: this.sharedMemoryData.physics.ersRecoveryLevel,
+                    ersPowerLevel: this.sharedMemoryData.physics.ersPowerLevel,
+                    kersCurrentKJ: this.sharedMemoryData.physics.kersCurrentKJ,
+                    kersMaxKJ: this.sharedMemoryData.physics.kersMaxKJ,
+                    kersInput: this.sharedMemoryData.physics.kersInput,
+                    drs: this.sharedMemoryData.physics.drs
+                },
+                graphics: {
+                    tyreCompound: this.sharedMemoryData.graphics.tyreCompound,
+                    rainTyres: this.sharedMemoryData.graphics.rainTyres,
+                    currentTyreSet: this.sharedMemoryData.graphics.currentTyreSet,
+                    mfdTyreSet: this.sharedMemoryData.graphics.mfdTyreSet,
+                    
+                    // MFD Pressures (si están disponibles)
+                    mfdTyrePressureLF: this.sharedMemoryData.graphics.mfdTyrePressureLF,
+                    mfdTyrePressureRF: this.sharedMemoryData.graphics.mfdTyrePressureRF,
+                    mfdTyrePressureLR: this.sharedMemoryData.graphics.mfdTyrePressureLR,
+                    mfdTyrePressureRR: this.sharedMemoryData.graphics.mfdTyrePressureRR,
+                    
+                    // Otros datos gráficos
+                    status: this.sharedMemoryData.graphics.status,
+                    session: this.sharedMemoryData.graphics.session,
+                    position: this.sharedMemoryData.graphics.position,
+                    completedLaps: this.sharedMemoryData.graphics.completedLaps,
+                    currentTime: this.sharedMemoryData.graphics.currentTime,
+                    lastTime: this.sharedMemoryData.graphics.lastTime,
+                    bestTime: this.sharedMemoryData.graphics.bestTime,
+                    deltaLapTime: this.sharedMemoryData.graphics.deltaLapTime,
+                    isInPit: this.sharedMemoryData.graphics.isInPit,
+                    flag: this.sharedMemoryData.graphics.flag,
+                    penalty: this.sharedMemoryData.graphics.penalty,
+                    rainIntensity: this.sharedMemoryData.graphics.rainIntensity,
+                    trackGripStatus: this.sharedMemoryData.graphics.trackGripStatus
+                },
                 static: this.sharedMemoryData.static
             },
             timestamp: new Date(),
@@ -658,84 +888,41 @@ class ACCSharedMemoryMonitorHybrid {
             protocol: 'shared_memory'
         };
 
+        // DEBUG: Verificar que los datos de neumáticos estén en extendedData antes de enviar
+        const physics = data.extendedData.physics;
+        
+        // Solo hacer debug cada 30 segundos para no spam
+        if (!this.lastSendDebug || Date.now() - this.lastSendDebug > 30000) {
+            this.lastSendDebug = Date.now();
+            console.log('\n📤 === ENVIANDO AL HYBRID MANAGER ===');
+            console.log('- TyreCoreTemp:', physics.TyreCoreTemp ? `[${physics.TyreCoreTemp.slice(0,4).map(t => t.toFixed(1)).join('°C, ')}°C]` : '❌');
+            console.log('- wheelPressure:', physics.wheelPressure ? `[${physics.wheelPressure.slice(0,4).map(p => p.toFixed(1)).join(', ')} psi]` : '❌');
+            console.log('- wheelSlip:', physics.wheelSlip ? `[${physics.wheelSlip.slice(0,4).map(w => (w*100).toFixed(1)).join('%, ')}%]` : '❌');
+            console.log('- slipRatio:', physics.slipRatio ? `[${physics.slipRatio.slice(0,4).map(s => Math.abs(s*100).toFixed(1)).join('%, ')}%]` : '❌');
+            console.log('═'.repeat(50));
+        }
+
         this.hybridManager.processData('sharedMemory', data);
     }
 
-    handlePhysicsEvent(data) {
-        this.sharedMemoryData.physics = {
-            gas: data.gas || 0,
-            brake: data.brake || 0,
-            fuel: data.fuel || 0,
-            gear: this.formatGear(data.gear),
-            rpm: Math.round(data.rpms || 0),
-            speedKmh: Math.round(data.speedKmh || 0),
-            accG: data.accG || [0, 0, 0],
-            tyreCoreTemperature: data.tyreCoreTemperature || [0, 0, 0, 0],
-            brakeTemp: data.brakeTemp || [0, 0, 0, 0],
-            wheelsPressure: data.wheelsPressure || [0, 0, 0, 0],
-            engineTemp: data.engineTemp || 0,
-            airTemp: data.airTemp || 0,
-            roadTemp: data.roadTemp || 0,
-            steerAngle: data.steerAngle || 0,
-            clutch: data.clutch || 0,
-            turboBoost: data.turboBoost || 0,
-            rideHeight: data.rideHeight || [0, 0],
-            suspensionTravel: data.suspensionTravel || [0, 0, 0, 0],
-            brakeBias: data.brakeBias || 0.5,
-            abs: data.abs || 0,
-            tc: data.tc || 0,
-            autoShifterOn: data.autoShifterOn || 0,
-            pitLimiterOn: data.pitLimiterOn || 0,
-            absInAction: data.absInAction || 0,
-            tcinAction: data.tcinAction || 0,
-            ersIsCharging: data.ersIsCharging || 0,
-            ersRecoveryLevel: data.ersRecoveryLevel || 0,
-            ersPowerLevel: data.ersPowerLevel || 0,
-            kersCurrentKJ: data.kersCurrentKJ || 0,
-            kersMaxKJ: data.kersMaxKJ || 0,
-            kersInput: data.kersInput || 0,
-            drs: data.drs || 0
-        };
-        this.updateCount++;
+    validateNumber(value, defaultValue = 0) {
+        if (value === null || value === undefined || isNaN(value)) {
+            return defaultValue;
+        }
+        const num = Number(value);
+        return isFinite(num) ? num : defaultValue;
     }
 
-    handleGraphicsEvent(data) {
-        this.sharedMemoryData.graphics = {
-            status: data.status || 0,
-            session: data.session || 0,
-            position: data.position || 0,
-            completedLaps: data.completedLaps || 0,
-            currentTime: this.safeString(data.currentTime),
-            lastTime: this.safeString(data.lastTime),
-            bestTime: this.safeString(data.bestTime),
-            deltaLapTime: data.deltaLapTime || 0,
-            isInPit: data.isInPit || 0,
-            flag: data.flag || 0,
-            penalty: data.penalty || 0,
-            tyreCompound: this.safeString(data.tyreCompound),
-            rainIntensity: data.rainIntensity || 0,
-            trackGripStatus: data.trackGripStatus || 1.0
-        };
-    }
-
-    handleStaticEvent(data) {
-        this.sharedMemoryData.static = {
-            playerName: this.safeString(data.playerName),
-            playerSurname: this.safeString(data.playerSurname),
-            carModel: this.safeString(data.carModel),
-            track: this.safeString(data.track),
-            maxRpm: data.maxRpm || 0,
-            maxFuel: data.maxFuel || 0,
-            maxPower: data.maxPower || 0,
-            maxTurboBoost: data.maxTurboBoost || 1.0,
-            hasERS: data.hasERS || 0,
-            hasKERS: data.hasKERS || 0,
-            hasDRS: data.hasDRS || 0
-        };
+    validateArray(value, defaultValue = []) {
+        if (!Array.isArray(value)) {
+            return defaultValue;
+        }
+        return value;
     }
 
     safeString(value) {
         if (value === null || value === undefined) return '';
+
         let result = '';
         if (Array.isArray(value)) {
             result = value.join('');
@@ -746,6 +933,7 @@ class ACCSharedMemoryMonitorHybrid {
         } else {
             result = String(value);
         }
+
         return result.replace(/\0/g, '').replace(/_/g, ' ').trim();
     }
 
@@ -761,13 +949,17 @@ class ACCSharedMemoryMonitorHybrid {
             if (!timeString || timeString.length === 0 || timeString === '--:--.---') {
                 return null;
             }
+
             const cleanTime = this.safeString(timeString);
             if (!cleanTime || cleanTime === '--:--.---') return null;
+
             const parts = cleanTime.split(':');
             if (parts.length !== 2) return null;
+
             const minutes = parseInt(parts[0]) || 0;
             const seconds = parseFloat(parts[1]) || 0;
             return (minutes * 60 + seconds) * 1000;
+
         } catch (error) {
             return null;
         }
@@ -813,7 +1005,7 @@ function initializeHybridSystem() {
 
     try {
         sharedMemoryMonitor = new ACCSharedMemoryMonitorHybrid(hybridManager);
-        console.log('✅ Sistema híbrido creado exitosamente');
+        console.log('✅ Sistema híbrido creado exitosamente con correcciones de neumáticos');
     } catch (error) {
         console.log('⚠️ Shared Memory no disponible:', error.message);
         sharedMemoryMonitor = null;
@@ -989,6 +1181,7 @@ if (libraryAvailable) {
             console.log('📡 Broadcasting: Información oficial de carrera y multijugador');
             console.log('🧠 Memoria compartida: Telemetría ultra-detallada del jugador');
             console.log('🔄 Anti-solapamiento: Los datos se priorizan automáticamente');
+            console.log('🛞 Sistema de neumáticos con campos reales de ACC');
             console.log('✅ Servidor corriendo en puerto 5000');
             console.log('🔍 Esperando conexión con ACC...');
             console.log('');
@@ -1015,6 +1208,7 @@ if (libraryAvailable) {
             console.log('   • Fallback automático entre protocolos');
             console.log('   • Máxima precisión y frecuencia');
             console.log('   • Compatible con dashboard existente');
+            console.log('   • Datos de neumáticos con campos reales de ACC');
             console.log('');
         }, 1000);
     } else {
@@ -1094,6 +1288,7 @@ server.listen(PORT, () => {
     console.log(`📡 Broadcasting: ${broadcastingMonitor ? 'Disponible' : 'No disponible'}`);
     console.log(`🧠 Memoria compartida: ${sharedMemoryMonitor ? 'Disponible' : 'No disponible'}`);
     console.log(`🔄 Gestor híbrido: ${hybridManager ? 'Activo' : 'No disponible'}`);
+    console.log(`🛞 Neumáticos: Campos reales de ACC (TyreCoreTemp, wheelPressure)`);
     console.log('');
     console.log('💡 Presiona Ctrl+C para salir');
     console.log('═'.repeat(50));

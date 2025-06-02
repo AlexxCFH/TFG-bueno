@@ -1,4 +1,4 @@
-﻿// hybrid-protocol-manager.js - GESTOR INTELIGENTE DE PROTOCOLOS
+﻿// hybrid-protocol-manager.js - GESTOR INTELIGENTE DE PROTOCOLOS CON CAMPOS REALES DE ACC
 class HybridProtocolManager {
     constructor(io) {
         this.io = io;
@@ -54,6 +54,7 @@ class HybridProtocolManager {
         
         this.mergedData = null;
         this.emitInterval = null;
+        this.lastMergeDebug = 0;
         this.startMergedDataEmitter();
     }
 
@@ -101,6 +102,48 @@ class HybridProtocolManager {
         this.mergeData();
     }
 
+    // === FUNCIÓN DE DEBUG PARA NEUMÁTICOS ===
+    debugTyreDataMerge(sharedMemoryData) {
+        // Debug cada 10 segundos para verificar el merge
+        if (!this.lastMergeDebug || Date.now() - this.lastMergeDebug > 10000) {
+            this.lastMergeDebug = Date.now();
+            
+            console.log('\n🔄 === DEBUG MERGE NEUMÁTICOS ===');
+            
+            if (sharedMemoryData?.extendedData?.physics) {
+                const physics = sharedMemoryData.extendedData.physics;
+                
+                console.log('📊 Datos recibidos en el merge:');
+                console.log('- TyreCoreTemp:', physics.TyreCoreTemp ? `[${physics.TyreCoreTemp.slice(0,4).map(t => t.toFixed(1)).join('°C, ')}°C]` : '❌');
+                console.log('- wheelPressure:', physics.wheelPressure ? `[${physics.wheelPressure.slice(0,4).map(p => p.toFixed(1)).join(', ')} psi]` : '❌');
+                console.log('- wheelSlip:', physics.wheelSlip ? `[${physics.wheelSlip.slice(0,4).map(w => (w*100).toFixed(1)).join('%, ')}%]` : '❌');
+                console.log('- slipRatio:', physics.slipRatio ? `[${physics.slipRatio.slice(0,4).map(s => Math.abs(s*100).toFixed(1)).join('%, ')}%]` : '❌');
+                
+                // Verificar si tyreData se crea correctamente
+                const tyreData = {
+                    compound: this.extractTyreCompound(sharedMemoryData.extendedData.graphics),
+                    temperatures: physics.TyreCoreTemp || [0, 0, 0, 0],
+                    pressures: physics.wheelPressure || [0, 0, 0, 0],
+                    wear: physics.wheelSlip || [0, 0, 0, 0],
+                    dirt: physics.slipRatio || [0, 0, 0, 0]
+                };
+                
+                console.log('🛞 tyreData creado:', {
+                    compound: tyreData.compound,
+                    hasTemperatures: tyreData.temperatures.some(t => t > 0),
+                    hasPressures: tyreData.pressures.some(p => p > 0),
+                    hasWear: tyreData.wear.some(w => w > 0),
+                    hasDirt: tyreData.dirt.some(d => d > 0)
+                });
+                
+            } else {
+                console.log('❌ No hay extendedData.physics en sharedMemoryData');
+            }
+            
+            console.log('═'.repeat(50));
+        }
+    }
+
     mergeData() {
         const sharedMemoryData = this.dataBuffer.sharedMemory;
         const broadcastingData = this.dataBuffer.broadcasting;
@@ -111,6 +154,11 @@ class HybridProtocolManager {
             return;
         }
 
+        // DEBUG para neumáticos
+        if (sharedMemoryData?.extendedData?.physics) {
+            this.debugTyreDataMerge(sharedMemoryData);
+        }
+
         // Crear estructura de datos merged
         const merged = {
             // === METADATOS ===
@@ -119,16 +167,15 @@ class HybridProtocolManager {
             isConnected: this.connectionStatus.sharedMemory || this.connectionStatus.broadcasting,
             protocol: this.determineActiveProtocol(),
             hybridStatus: {
-                sharedMemory: {
-                    connected: this.connectionStatus.sharedMemory,
-                    quality: this.dataQuality.sharedMemory,
-                    lastUpdate: this.lastDataTimestamp.sharedMemory
+                protocols: {
+                    sharedMemory: this.connectionStatus.sharedMemory,
+                    broadcasting: this.connectionStatus.broadcasting
                 },
-                broadcasting: {
-                    connected: this.connectionStatus.broadcasting,
-                    quality: this.dataQuality.broadcasting,
-                    lastUpdate: this.lastDataTimestamp.broadcasting
-                }
+                quality: {
+                    sharedMemory: this.dataQuality.sharedMemory,
+                    broadcasting: this.dataQuality.broadcasting
+                },
+                activeProtocol: this.determineActiveProtocol()
             },
 
             // === INFORMACIÓN DEL COCHE (Broadcasting Priority) ===
@@ -164,11 +211,13 @@ class HybridProtocolManager {
                 vertical: sharedMemoryData.extendedData.physics.accG[1] || 0
             } : null,
 
-            // === NEUMÁTICOS (Shared Memory Priority) ===
+            // === NEUMÁTICOS (CORREGIDO CON CAMPOS REALES DEL TEST) ===
             tyreData: sharedMemoryData?.extendedData?.physics ? {
-                compound: sharedMemoryData.extendedData.graphics?.tyreCompound || 'Desconocido',
-                temperatures: sharedMemoryData.extendedData.physics.tyreCoreTemperature || [0, 0, 0, 0],
-                pressures: sharedMemoryData.extendedData.physics.wheelsPressure || [0, 0, 0, 0]
+                compound: this.extractTyreCompound(sharedMemoryData.extendedData.graphics),
+                temperatures: sharedMemoryData.extendedData.physics.TyreCoreTemp || [0, 0, 0, 0],    // ✅ Campo real del test
+                pressures: sharedMemoryData.extendedData.physics.wheelPressure || [0, 0, 0, 0],      // ✅ Campo real del test
+                wear: sharedMemoryData.extendedData.physics.wheelSlip || [0, 0, 0, 0],               // ✅ Campo real del test
+                dirt: sharedMemoryData.extendedData.physics.slipRatio || [0, 0, 0, 0]                // ✅ Campo real del test
             } : null,
 
             // === FRENOS (Shared Memory Priority) ===
@@ -234,10 +283,95 @@ class HybridProtocolManager {
                 carIndex: broadcastingData.playerCarIndex || null,
                 identified: broadcastingData.playerCarIdentified || false,
                 allCarsCount: broadcastingData.allCarsCount || 0
-            } : null
+            } : null,
+
+            // === DATOS EXTENDIDOS PARA DEBUG ===
+            extendedData: sharedMemoryData?.extendedData || null
         };
 
         this.mergedData = merged;
+    }
+
+    // === FUNCIÓN PARA OBTENER LAS MEJORES PRESIONES (SIN LOGS EN BUCLE) ===
+    getBestPressures(physics, graphics) {
+        // Prioridad 1: Presiones del MFD (más precisas según el test)
+        if (graphics && 
+            graphics.mfdTyrePressureLF !== undefined && 
+            graphics.mfdTyrePressureRF !== undefined && 
+            graphics.mfdTyrePressureLR !== undefined && 
+            graphics.mfdTyrePressureRR !== undefined) {
+            
+            const mfdPressures = [
+                graphics.mfdTyrePressureLF,
+                graphics.mfdTyrePressureRF,
+                graphics.mfdTyrePressureLR,
+                graphics.mfdTyrePressureRR
+            ];
+            
+            // Verificar que sean valores razonables (15-50 psi)
+            if (mfdPressures.every(p => p > 15 && p < 50)) {
+                return mfdPressures;
+            }
+        }
+        
+        // Prioridad 2: wheelPressure de physics (encontrado en el test)
+        if (physics && physics.wheelPressure && Array.isArray(physics.wheelPressure)) {
+            const wheelPressures = physics.wheelPressure.slice(0, 4);
+            if (wheelPressures.some(p => p > 0)) {
+                return wheelPressures;
+            }
+        }
+        
+        // Prioridad 3: Fallback a wheelsPressure (por compatibilidad)
+        if (physics && physics.wheelsPressure && Array.isArray(physics.wheelsPressure)) {
+            return physics.wheelsPressure.slice(0, 4);
+        }
+        
+        // Fallback final
+        return [0, 0, 0, 0];
+    }
+
+    // === FUNCIÓN PARA EXTRAER COMPUESTO DE NEUMÁTICOS (SIN LOGS EN BUCLE) ===
+    extractTyreCompound(graphics) {
+        if (!graphics) return 'Desconocido';
+        
+        // Extraer compuesto del formato encontrado en el test: "d,r,y,_,c,o,m,p,o,u,n,d"
+        if (graphics.tyreCompound) {
+            let compound = graphics.tyreCompound;
+            
+            // Si es array, convertir a string
+            if (Array.isArray(compound)) {
+                compound = compound.join('');
+            }
+            
+            // Limpiar formato específico de ACC
+            compound = compound.toString()
+                .replace(/,/g, '')           // Quitar comas
+                .replace(/_/g, ' ')          // Convertir _ a espacios
+                .replace(/\0/g, '')          // Quitar caracteres nulos
+                .trim();                     // Limpiar espacios
+            
+            if (compound && compound.length > 2) {
+                // Capitalizar primera letra
+                return compound.charAt(0).toUpperCase() + compound.slice(1).toLowerCase();
+            }
+        }
+        
+        // Información adicional basada en el test
+        if (graphics.rainTyres === true) {
+            return 'Neumático de lluvia';
+        } else if (graphics.rainTyres === false && graphics.currentTyreSet !== undefined) {
+            return `Set ${graphics.currentTyreSet} (Seco)`;
+        } else if (graphics.rainTyres === false) {
+            return 'Neumático seco';
+        }
+        
+        // Información del MFD
+        if (graphics.mfdTyreSet !== undefined) {
+            return `Set MFD ${graphics.mfdTyreSet}`;
+        }
+        
+        return 'Compuesto desconocido';
     }
 
     mergeRealtimeData(sharedMemoryData, broadcastingData) {
@@ -375,9 +509,11 @@ class HybridProtocolManager {
             isConnected: false,
             protocol: 'none',
             hybridStatus: {
-                sharedMemory: { connected: false, quality: 0, lastUpdate: 0 },
-                broadcasting: { connected: false, quality: 0, lastUpdate: 0 }
-            }
+                protocols: { sharedMemory: false, broadcasting: false },
+                quality: { sharedMemory: 0, broadcasting: 0 },
+                activeProtocol: 'none'
+            },
+            extendedData: null
         };
     }
 

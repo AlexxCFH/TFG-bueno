@@ -1,4 +1,4 @@
-// script.js - FRONTEND PARA SISTEMA HÍBRIDO INTELIGENTE
+// script.js - FRONTEND PARA SISTEMA HÍBRIDO INTELIGENTE CON FIX DE NEUMÁTICOS
 // Inicializar Socket.IO
 const socket = io();
 
@@ -55,6 +55,10 @@ const tyrePressFL = document.getElementById('tyrePressFL');
 const tyrePressRF = document.getElementById('tyrePressRF');
 const tyrePressRL = document.getElementById('tyrePressRL');
 const tyrePressRR = document.getElementById('tyrePressRR');
+const tyreWearFL = document.getElementById('tyreWearFL');
+const tyreWearFR = document.getElementById('tyreWearFR');
+const tyreWearRL = document.getElementById('tyreWearRL');
+const tyreWearRR = document.getElementById('tyreWearRR');
 
 // Referencias - FRENOS
 const brakeTempFL = document.getElementById('brakeTempFL');
@@ -151,7 +155,6 @@ socket.on('connect_error', (error) => {
 
 // Evento principal de telemetría híbrida
 socket.on('telemetry_update', (data) => {
-    console.log('🎯 Datos híbridos recibidos:', data);
     updateHybridTelemetry(data);
     detectImportantChanges(data);
 });
@@ -199,12 +202,8 @@ function updateHybridTelemetry(data) {
         hideGForceData();
     }
 
-    // 6. Neumáticos (Shared Memory priority)
-    if (data.tyreData) {
-        updateTyreData(data.tyreData);
-    } else {
-        hideTyreData();
-    }
+    // 6. Neumáticos (CORREGIDO - SIN LOGS EN BUCLE)
+    updateTyreDataFromExtended(data);
 
     // 7. Frenos (Shared Memory priority)
     if (data.brakeData) {
@@ -244,7 +243,65 @@ function updateHybridTelemetry(data) {
     if (data.trackData) updateTrackData(data.trackData);
 
     updateTimestamp();
-    console.log(`✅ Datos híbridos actualizados (${data.protocol})`);
+}
+
+// === FUNCIÓN CORREGIDA: Actualizar neumáticos desde extendedData ===
+function updateTyreDataFromExtended(data) {
+    // OPCIÓN 1: Intentar desde tyreData estructurado
+    if (data.tyreData) {
+        updateTyreData(data.tyreData);
+        return;
+    }
+    
+    // OPCIÓN 2: Intentar desde extendedData.physics (datos RAW)
+    if (data.extendedData && data.extendedData.physics) {
+        const physics = data.extendedData.physics;
+        
+        // Crear estructura tyreData desde physics usando campos reales de ACC
+        const tyreDataFromPhysics = {
+            temperatures: physics.TyreCoreTemp || [0, 0, 0, 0],        // Campo real ACC
+            pressures: physics.wheelPressure || [0, 0, 0, 0],          // Campo real ACC
+            wear: physics.wheelSlip || [0, 0, 0, 0],                   // Campo real ACC
+            dirt: physics.slipRatio || [0, 0, 0, 0],                   // Campo real ACC
+            compound: data.extendedData.graphics?.tyreCompound || 'Desconocido'
+        };
+        
+        updateTyreData(tyreDataFromPhysics);
+        return;
+    }
+    
+    // OPCIÓN 3: Si no hay datos, ocultar
+    hideTyreData();
+}
+
+// === FUNCIÓN DE DEBUG PARA NEUMÁTICOS (REDUCIDA) ===
+function debugTyreDataReceived(data) {
+    // Solo hacer debug cada 30 segundos para evitar spam
+    if (!window.lastTyreDebug || Date.now() - window.lastTyreDebug > 30000) {
+        window.lastTyreDebug = Date.now();
+        
+        console.log('\n🔍 === DEBUG DATOS NEUMÁTICOS ===');
+        console.log('Protocolo activo:', data.protocol);
+        console.log('¿Conectado a ACC?:', data.isConnected);
+        console.log('¿Tiene tyreData?', !!data.tyreData);
+        
+        if (data.tyreData) {
+            const hasValidTemps = data.tyreData.temperatures && data.tyreData.temperatures.some(t => t > 0);
+            const hasValidPressures = data.tyreData.pressures && data.tyreData.pressures.some(p => p > 0);
+            const hasValidWear = data.tyreData.wear && data.tyreData.wear.some(w => w > 0);
+            
+            console.log('✅ Estado:', {
+                temperaturas: hasValidTemps ? 'VÁLIDAS' : 'NO VÁLIDAS',
+                presiones: hasValidPressures ? 'VÁLIDAS' : 'NO VÁLIDAS',
+                desgaste: hasValidWear ? 'VÁLIDO' : 'NO VÁLIDO',
+                compuesto: data.tyreData.compound || 'No disponible'
+            });
+        } else {
+            console.log('❌ No hay tyreData en los datos recibidos');
+        }
+        
+        console.log('═'.repeat(50));
+    }
 }
 
 // === FUNCIONES DE ACTUALIZACIÓN ESPECÍFICAS ===
@@ -489,45 +546,98 @@ function updateGForceData(gForceData) {
     }
 }
 
+// === FUNCIÓN DE NEUMÁTICOS CORREGIDA ===
 function updateTyreData(tyreData) {
-    if (!tyreData) return;
+    if (!tyreData) {
+        hideTyreData();
+        return;
+    }
 
     // Compuesto
     if (tyreCompound) {
-        tyreCompound.textContent = tyreData.compound || 'Desconocido';
+        const compound = tyreData.compound || 'Desconocido';
+        tyreCompound.textContent = compound;
     }
 
     // Temperaturas
-    if (tyreData.temperatures) {
+    if (tyreData.temperatures && Array.isArray(tyreData.temperatures)) {
         const temps = tyreData.temperatures;
-        if (tyreTempFL) tyreTempFL.textContent = `${Math.round(temps[0] || 0)}°C`;
-        if (tyreTempFR) tyreTempFR.textContent = `${Math.round(temps[1] || 0)}°C`;
-        if (tyreTempRL) tyreTempRL.textContent = `${Math.round(temps[2] || 0)}°C`;
-        if (tyreTempRR) tyreTempRR.textContent = `${Math.round(temps[3] || 0)}°C`;
-
-        [tyreTempFL, tyreTempFR, tyreTempRL, tyreTempRR].forEach((element, index) => {
-            if (element) {
-                const temp = temps[index] || 0;
+        
+        // IDs correctos según el HTML
+        const tempElements = [tyreTempFL, tyreTempFR, tyreTempRL, tyreTempRR];
+        
+        tempElements.forEach((element, index) => {
+            if (element && temps[index] !== undefined) {
+                const temp = Math.round(temps[index] || 0);
+                element.textContent = `${temp}°C`;
+                
+                // Código de colores para temperaturas
                 if (temp > 110) {
-                    element.style.color = '#f44336';
+                    element.style.color = '#f44336'; // Rojo - muy caliente
                 } else if (temp > 90) {
-                    element.style.color = '#ff9800';
+                    element.style.color = '#ff9800'; // Naranja - caliente
                 } else if (temp > 70) {
-                    element.style.color = '#4CAF50';
+                    element.style.color = '#4CAF50'; // Verde - óptimo
+                } else if (temp > 30) {
+                    element.style.color = '#2196F3'; // Azul - frío
                 } else {
-                    element.style.color = '#2196F3';
+                    element.style.color = '#757575'; // Gris - sin datos
                 }
             }
         });
     }
 
-    // Presiones
-    if (tyreData.pressures) {
+    // Presiones - CORRECCIÓN: IDs correctos del HTML
+    if (tyreData.pressures && Array.isArray(tyreData.pressures)) {
         const pressures = tyreData.pressures;
-        if (tyrePressFL) tyrePressFL.textContent = `${(pressures[0] || 0).toFixed(1)} psi`;
-        if (tyrePressRF) tyrePressRF.textContent = `${(pressures[1] || 0).toFixed(1)} psi`;
-        if (tyrePressRL) tyrePressRL.textContent = `${(pressures[2] || 0).toFixed(1)} psi`;
-        if (tyrePressRR) tyrePressRR.textContent = `${(pressures[3] || 0).toFixed(1)} psi`;
+        
+        // IDs según el HTML: tyrePressFL, tyrePressRF, tyrePressRL, tyrePressRR
+        const pressureElements = [tyrePressFL, tyrePressRF, tyrePressRL, tyrePressRR];
+        
+        pressureElements.forEach((element, index) => {
+            if (element && pressures[index] !== undefined) {
+                const pressure = pressures[index] || 0;
+                element.textContent = `${pressure.toFixed(1)} psi`;
+                
+                // Código de colores para presiones (25-35 psi óptimo)
+                if (pressure < 20 || pressure > 40) {
+                    element.style.color = '#f44336'; // Rojo - fuera de rango
+                } else if (pressure < 25 || pressure > 35) {
+                    element.style.color = '#ff9800'; // Naranja - subóptimo
+                } else if (pressure > 0) {
+                    element.style.color = '#4CAF50'; // Verde - óptimo
+                } else {
+                    element.style.color = '#757575'; // Gris - sin datos
+                }
+            }
+        });
+    }
+
+    // Desgaste (wheelSlip convertido a porcentaje)
+    if (tyreData.wear && Array.isArray(tyreData.wear)) {
+        const wear = tyreData.wear;
+        
+        // IDs de desgaste según el HTML
+        const wearElements = [tyreWearFL, tyreWearFR, tyreWearRL, tyreWearRR];
+        
+        wearElements.forEach((element, index) => {
+            if (element && wear[index] !== undefined) {
+                // wheelSlip: convertir a porcentaje visible
+                const wearValue = Math.min(Math.abs(wear[index]) * 100, 100);
+                element.textContent = `${wearValue.toFixed(1)}%`;
+                
+                // Código de colores para desgaste
+                if (wearValue > 80) {
+                    element.style.color = '#f44336'; // Rojo - muy gastado
+                } else if (wearValue > 60) {
+                    element.style.color = '#ff9800'; // Naranja - gastado
+                } else if (wearValue > 30) {
+                    element.style.color = '#ffeb3b'; // Amarillo - medio
+                } else {
+                    element.style.color = '#4CAF50'; // Verde - bueno
+                }
+            }
+        });
     }
 }
 
@@ -777,13 +887,32 @@ function hideGForceData() {
     });
 }
 
+// === FUNCIÓN CORREGIDA PARA OCULTAR NEUMÁTICOS ===
 function hideTyreData() {
     if (tyreCompound) tyreCompound.textContent = 'No disponible';
+    
+    // Resetear temperaturas
     [tyreTempFL, tyreTempFR, tyreTempRL, tyreTempRR].forEach(element => {
-        if (element) element.textContent = '-°C';
+        if (element) {
+            element.textContent = '-°C';
+            element.style.color = '#757575';
+        }
     });
+    
+    // Resetear presiones - IDs CORRECTOS
     [tyrePressFL, tyrePressRF, tyrePressRL, tyrePressRR].forEach(element => {
-        if (element) element.textContent = '-.- psi';
+        if (element) {
+            element.textContent = '-.-- psi';
+            element.style.color = '#757575';
+        }
+    });
+    
+    // Resetear desgaste
+    [tyreWearFL, tyreWearFR, tyreWearRL, tyreWearRR].forEach(element => {
+        if (element) {
+            element.textContent = '--%';
+            element.style.color = '#757575';
+        }
     });
 }
 
@@ -1153,4 +1282,5 @@ document.addEventListener('DOMContentLoaded', () => {
     console.log('✅ Dashboard Híbrido Inteligente listo');
     console.log('🔄 Anti-solapamiento de datos activado');
     console.log('🎯 Priorización automática por tipo de dato');
+    console.log('🛞 Sistema de neumáticos con campos reales de ACC activado');
 });
